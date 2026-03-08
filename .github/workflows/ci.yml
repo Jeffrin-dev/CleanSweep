@@ -79,6 +79,7 @@ jobs:
 
       - name: Version string consistency
         # version.py must match the most recent entry in CHANGELOG.md.
+        # Regex handles optional type annotation: VERSION: str = "x.y.z"
         run: |
           python3 - <<'EOF'
           import re, sys
@@ -136,32 +137,36 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run full test suite
+        # Discovers tests in both root (test_safe_actions.py) and tests/ subfolder.
         run: |
           python3 -m unittest discover -s . -p "test_*.py" -v
+          python3 -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Confirm 838 tests ran
+        # Counts tests from both discovery locations and sums them.
         run: |
           python3 - <<'EOF'
           import subprocess, sys, re
 
-          result = subprocess.run(
-              ["python3", "-m", "unittest", "discover", "-s", ".", "-p", "test_*.py"],
-              capture_output=True, text=True
-          )
-          output = result.stderr + result.stdout
-          m = re.search(r"Ran (\d+) test", output)
-          if not m:
-              print("FAIL: Could not parse test count from unittest output.")
-              sys.exit(1)
+          total = 0
+          for start in [".", "tests"]:
+              result = subprocess.run(
+                  ["python3", "-m", "unittest", "discover",
+                   "-s", start, "-p", "test_*.py"],
+                  capture_output=True, text=True
+              )
+              output = result.stderr + result.stdout
+              m = re.search(r"Ran (\d+) test", output)
+              if m:
+                  total += int(m.group(1))
 
-          ran = int(m.group(1))
           expected = 838
-          if ran < expected:
-              print(f"FAIL: Expected {expected} tests, but only {ran} ran.")
+          if total < expected:
+              print(f"FAIL: Expected {expected} tests, but only {total} ran.")
               print("Was a test file accidentally excluded from discovery?")
               sys.exit(1)
 
-          print(f"OK — {ran} tests ran (expected {expected}).")
+          print(f"OK — {total} tests ran (expected {expected}).")
           EOF
 
   # ---------------------------------------------------------------------------
@@ -185,4 +190,4 @@ jobs:
       - name: Run memory stress test at 100K files
         timeout-minutes: 10
         run: |
-          CS_STRESS_FILES=100000 python3 -m unittest test_memory -v
+          CS_STRESS_FILES=100000 python3 -m unittest tests/test_memory.py -v
