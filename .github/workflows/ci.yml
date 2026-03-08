@@ -85,7 +85,7 @@ jobs:
           from pathlib import Path
 
           version_py = Path("version.py").read_text()
-          m = re.search(r'VERSION\s*=\s*"([^"]+)"', version_py)
+          m = re.search(r'VERSION.*=\s*"([^"]+)"', version_py)
           if not m:
               print("FAIL: VERSION not found in version.py")
               sys.exit(1)
