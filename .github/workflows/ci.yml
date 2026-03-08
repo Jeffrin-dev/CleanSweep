@@ -1,0 +1,203 @@
+# CleanSweep CI
+#
+# Three jobs run on every push and pull request to main, release/v3, and dev.
+#
+#   integrity   — architecture gate: no print() leaks, no circular imports,
+#                 version string consistent across version.py and CHANGELOG.md
+#
+#   test        — full 838-test suite on Python 3.10, 3.11, and 3.12
+#                 (standard library only — no pip install, no virtualenv)
+#
+#   stress      — memory and scale tests at 100K files
+#                 runs on dev and main only (expensive; not on every PR)
+#
+# All jobs must pass before a PR can be merged into main or release/v3.
+
+name: CI
+
+on:
+  push:
+    branches: [main, "release/v3", dev]
+  pull_request:
+    branches: [main, "release/v3", dev]
+
+# Cancel in-progress runs for the same branch when a newer commit arrives.
+# Keeps the queue clean on fast-moving dev branches.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1 — Integrity checks (fast gate, no matrix)
+  # ---------------------------------------------------------------------------
+  integrity:
+    name: Integrity checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No install step — standard library only.
+
+      - name: Check Python version
+        run: python3 --version
+
+      - name: No print() in engine modules
+        # Engine modules must never call print() — all output lives in report.py.
+        # Matches the check documented in CONTRIBUTING.md §8.
+        run: |
+          echo "Scanning engine modules for print() calls..."
+          VIOLATIONS=$(grep -rn "print(" \
+            scanner.py \
+            duplicates.py \
+            rules.py \
+            organizer.py \
+            analyzer.py \
+            config.py \
+            destination_map.py \
+            planner.py \
+            batch_engine.py \
+            action_controller.py \
+            file_operation_manager.py \
+            trash_manager.py \
+            logger.py \
+            timer.py \
+            policy.py \
+            || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "FAIL: print() found in engine module(s):"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "OK — no print() calls in engine modules."
+
+      - name: No circular imports
+        # Import main.py — if the import graph is broken, Python will raise ImportError.
+        # Matches the check documented in CONTRIBUTING.md §8.
+        run: |
+          echo "Checking import graph..."
+          python3 -c "import main" && echo "OK — import graph is clean."
+
+      - name: Version string consistency
+        # version.py must match the most recent entry in CHANGELOG.md.
+        # Prevents releasing without updating the changelog.
+        run: |
+          python3 - <<'EOF'
+          import re, sys
+          from pathlib import Path
+
+          version_py = Path("version.py").read_text()
+          m = re.search(r'VERSION\s*=\s*"([^"]+)"', version_py)
+          if not m:
+              print("FAIL: VERSION not found in version.py")
+              sys.exit(1)
+          declared = m.group(1)
+
+          changelog = Path("CHANGELOG.md").read_text()
+          m2 = re.search(r"##\s*\[([^\]]+)\]", changelog)
+          if not m2:
+              print("FAIL: No version header found in CHANGELOG.md")
+              sys.exit(1)
+          latest = m2.group(1)
+
+          if declared != latest:
+              print(f"FAIL: version.py says {declared!r} but CHANGELOG.md says {latest!r}")
+              sys.exit(1)
+
+          print(f"OK — version {declared!r} consistent across version.py and CHANGELOG.md")
+          EOF
+
+      - name: LICENSE file present
+        run: |
+          if [ ! -f LICENSE ]; then
+            echo "FAIL: LICENSE file is missing. Required for open-source distribution."
+            exit 1
+          fi
+          echo "OK — LICENSE file present."
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — Full test suite (matrix: Python 3.10 / 3.11 / 3.12)
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: integrity        # only run if integrity passed
+
+    strategy:
+      fail-fast: false      # show failures on all versions, not just the first
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # No pip install — standard library only.
+
+      - name: Run full test suite
+        # Matches the command documented in CONTRIBUTING.md §6.
+        # -v gives per-test output so failures are easy to trace in the log.
+        run: |
+          python3 -m unittest discover -s . -p "test_*.py" -v
+
+      - name: Confirm 838 tests ran
+        # Guard against accidental test deletion or mis-discovery.
+        # Update this number whenever tests are intentionally added or removed.
+        run: |
+          python3 - <<'EOF'
+          import subprocess, sys, re
+
+          result = subprocess.run(
+              ["python3", "-m", "unittest", "discover", "-s", ".", "-p", "test_*.py"],
+              capture_output=True, text=True
+          )
+          # unittest prints "Ran N tests" to stderr
+          output = result.stderr + result.stdout
+          m = re.search(r"Ran (\d+) test", output)
+          if not m:
+              print("FAIL: Could not parse test count from unittest output.")
+              sys.exit(1)
+
+          ran = int(m.group(1))
+          expected = 838
+          if ran < expected:
+              print(f"FAIL: Expected {expected} tests, but only {ran} ran.")
+              print("Was a test file accidentally excluded from discovery?")
+              sys.exit(1)
+
+          print(f"OK — {ran} tests ran (expected {expected}).")
+          EOF
+
+  # ---------------------------------------------------------------------------
+  # Job 3 — Stress tests (100K files — expensive, main and dev only)
+  # ---------------------------------------------------------------------------
+  stress:
+    name: Stress test (100K files)
+    runs-on: ubuntu-latest
+    needs: test
+    # Only run on pushes to main or dev — not on every PR to keep CI fast.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run memory stress test at 100K files
+        # CS_STRESS_FILES documented in CONTRIBUTING.md §6.
+        # Timeout: 10 minutes — real hardware does 100K in ~18s; CI should be well under.
+        timeout-minutes: 10
+        run: |
+          CS_STRESS_FILES=100000 python3 -m unittest test_memory -v

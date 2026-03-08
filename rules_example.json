@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "rules": [
+    {
+      "name": "Images",
+      "match": {
+        "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".heic", ".tiff"]
+      },
+      "destination": "Images"
+    },
+    {
+      "name": "Documents",
+      "match": {
+        "extensions": [".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls", ".csv", ".md", ".odt"]
+      },
+      "destination": "Documents"
+    },
+    {
+      "name": "Videos",
+      "match": {
+        "extensions": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]
+      },
+      "destination": "Videos"
+    },
+    {
+      "name": "Audio",
+      "match": {
+        "extensions": [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".opus"]
+      },
+      "destination": "Audio"
+    },
+    {
+      "name": "Archives",
+      "match": {
+        "extensions": [".zip", ".tar", ".gz", ".bz2", ".rar", ".7z", ".xz"]
+      },
+      "destination": "Archives"
+    },
+    {
+      "name": "Code",
+      "match": {
+        "extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".json", ".yaml", ".yml", ".toml", ".sh", ".rs", ".go", ".java", ".cpp", ".c", ".h"]
+      },
+      "destination": "Code"
+    }
+  ],
+  "default_destination": "Others"
+}

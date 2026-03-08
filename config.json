@@ -1,0 +1,17 @@
+{
+  "version":           "2.7",
+  "scan": {
+    "recursive":      true,
+    "symlink_policy": "ignore",
+    "max_depth":      null,
+    "exclude":        []
+  },
+  "ignore_extensions": [".log", ".tmp"],
+  "ignore_folders":    ["node_modules", ".git"],
+  "default_scan_path": null,
+  "default_dry_run":   true,
+  "min_file_size":     0,
+  "hash_chunk_size":   1048576,
+  "log_level":         "INFO",
+  "workers":           null
+}
