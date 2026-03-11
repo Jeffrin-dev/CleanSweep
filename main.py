@@ -214,9 +214,16 @@ def build_parser() -> argparse.ArgumentParser:
             "IRREVERSIBLE. Requires --delete."
         ),
     )
+    # FIX: BooleanOptionalAction enables --dry-run and --no-dry-run.
+    # default=None means "user did not set this flag" — config value is used as fallback.
     dup_p.add_argument(
-        "--dry-run", action="store_true",
-        help="Simulate the full operation without modifying any files.",
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Simulate the full operation without modifying any files. "
+            "Use --no-dry-run to override config default_dry_run=true."
+        ),
     )
     dup_p.add_argument(
         "--json-report", type=Path, metavar="FILE",
@@ -246,6 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  cleansweep organize ~/Downloads\n"
             "  cleansweep organize ~/Downloads --dry-run\n"
+            "  cleansweep organize ~/Downloads --no-dry-run\n"
             "\n"
             "Exit codes:\n"
             "  0   Success\n"
@@ -256,8 +264,17 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     org_p.add_argument("path", type=Path, metavar="PATH", help="Directory to organize.")
-    org_p.add_argument("--dry-run", action="store_true",
-                       help="Preview moves without modifying any files.")
+    # FIX: BooleanOptionalAction enables --dry-run and --no-dry-run.
+    # default=None means "user did not set this flag" — config value is used as fallback.
+    org_p.add_argument(
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Preview moves without modifying any files. "
+            "Use --no-dry-run to override config default_dry_run=true."
+        ),
+    )
     org_p.add_argument(
         "--rules-file", type=Path, metavar="FILE", default=None,
         help=(
@@ -378,7 +395,7 @@ def _resolve_log_level(args: argparse.Namespace, cfg: AppConfig) -> str:
 # Subcommand handlers
 #
 # Rules (permanent):
-#   - Return int exit code.  Never call sys.exit() directly.
+#   - Return int exit code. Never call sys.exit() directly.
 #   - Call _cli_error() for argument constraint violations (argument errors exit 2).
 #   - Use logger for error messages. Do not print() errors directly.
 # ---------------------------------------------------------------------------
@@ -413,12 +430,14 @@ def _cmd_scan(args: argparse.Namespace, cfg: AppConfig) -> int:
 def _cmd_duplicates(args: argparse.Namespace, cfg: AppConfig) -> int:
     # Argument constraint: --permanent requires --delete
     if args.permanent and not args.delete:
-        _cli_error("--permanent requires --delete. Use: --delete --permanent")
+        _cli_error("--permanent requires --delete. "
+                   "Use: --delete --permanent")
 
     workers = args.workers if args.workers is not None else cfg.workers
     _validate_workers(workers)
 
-    dry_run     = args.dry_run or cfg.default_dry_run
+    # FIX: CLI flag takes precedence; fall back to config only when not set by user.
+    dry_run     = args.dry_run if args.dry_run is not None else cfg.default_dry_run
     delete_mode = DELETE_MODE_PERMANENT if args.permanent else DELETE_MODE_TRASH
 
     try:
@@ -511,7 +530,8 @@ def _cmd_organize(args: argparse.Namespace, cfg: AppConfig) -> int:
     from batch_engine import BatchEngine
     from destination_map import DestinationMapError
 
-    dry_run = args.dry_run or cfg.default_dry_run
+    # FIX: CLI flag takes precedence; fall back to config only when not set by user.
+    dry_run = args.dry_run if args.dry_run is not None else cfg.default_dry_run
 
     # Load custom ruleset if --rules-file supplied; None → DEFAULT_RULESET
     ruleset = _load_ruleset(getattr(args, "rules_file", None))
@@ -583,8 +603,6 @@ def _cmd_report(args: argparse.Namespace, cfg: AppConfig) -> int:
     breakdown, N largest files, and a duplicate-candidate estimate
     (files sharing size, before hashing).
     """
-    from collections import defaultdict
-
     try:
         folder = validate_folder(args.path)
     except FileNotFoundError as e:
@@ -634,7 +652,6 @@ def _cmd_report(args: argparse.Namespace, cfg: AppConfig) -> int:
             logger.log_error(f"--output: cannot write {output_path}: {exc}")
 
     return Exit.SUCCESS
-
 
 
 # ---------------------------------------------------------------------------
