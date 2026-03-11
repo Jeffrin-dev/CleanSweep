@@ -9,7 +9,7 @@
   "ignore_extensions": [".log", ".tmp"],
   "ignore_folders":    ["node_modules", ".git"],
   "default_scan_path": null,
-  "default_dry_run":   true,
+  "default_dry_run":   false,
   "min_file_size":     0,
   "hash_chunk_size":   1048576,
   "log_level":         "INFO",
